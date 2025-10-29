@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YBot Test Area</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #f0f0f0;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        #container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 100;
+        }
+
+        #controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>YBot Test Area</h3>
+        <p>Mouse: Left-click orbit | Wheel: Zoom | Right-click: Context menu</p>
+    </div>
+
+    <div id="controls">
+        <button onclick="resetCamera()">Reset Camera</button><br>
+        <button onclick="toggleWireframe()">Wireframe</button><br><br>
+        <strong>Pose Presets:</strong><br>
+        <button onclick="applyPosePreset('wave')">Wave Hello</button>
+        <button onclick="applyPosePreset('point')">Point</button><br>
+        <button onclick="applyPosePreset('dance')">Dance</button>
+        <button onclick="applyPosePreset('idle')">Relax</button><br><br>
+        <strong>LLM Input:</strong><br>
+        <input id="llmInput" placeholder="Describe pose (wave, point, dance, relax)" style="width: 200px;"><br>
+        <button onclick="parseLLMPose(document.getElementById('llmInput').value)">Apply Pose</button>
+        <div id="llmResponse" style="margin-top: 5px; font-size: 12px; color: #ccc;"></div>
+    </div>
+
+    <div id="container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.0/umd/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three-ik@0.3.1/build/three-ik.min.js"></script>
+
+    <script>
+let scene, camera, renderer;
+let ybot, ground;
+let ikSolver;
+let ikChains = {};
+let ikTargets = {};
+let posePresets = {
+    "wave": {
+        leftHand: [0.6, 1.8, 0.4],
+        rightHand: [-0.6, 1.8, 0.4],
+        description: "Waving both hands"
+    },
+    "point": {
+        leftHand: [0.8, 1.2, 0.6],
+        rightHand: [-0.3, 1.0, 0.8],
+        description: "Pointing with left hand"
+    },
+    "dance": {
+        leftHand: [0.4, 1.6, 0.2],
+        rightHand: [-0.4, 1.6, -0.2],
+        description: "Dancing pose"
+    },
+    "idle": {
+        leftHand: [0.2, 0.8, 0.1],
+        rightHand: [-0.2, 0.8, 0.1],
+        description: "Relaxed standing pose"
+    }
+};        init();
+        animate();
+
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB); // Sky blue
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            // Camera position will be set by updateCameraPosition()
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('container').appendChild(renderer.domElement);
+
+            // Manual orbit controls (proper implementation)
+            let isMouseDown = false;
+            let lastMouseX = 0;
+            let lastMouseY = 0;
+            let cameraDistance = 5;
+            let cameraRotationX = 0;
+            let cameraRotationY = 0;
+
+            function updateCameraPosition() {
+                camera.position.x = cameraDistance * Math.sin(cameraRotationY) * Math.cos(cameraRotationX);
+                camera.position.y = cameraDistance * Math.sin(cameraRotationX);
+                camera.position.z = cameraDistance * Math.cos(cameraRotationY) * Math.cos(cameraRotationX);
+                camera.lookAt(0, 0, 0); // Look at origin (YBot position)
+            }
+
+            renderer.domElement.addEventListener('mousedown', function(event) {
+                if (event.button === 0) { // Left click only
+                    isMouseDown = true;
+                    lastMouseX = event.clientX;
+                    lastMouseY = event.clientY;
+                }
+            });
+
+            renderer.domElement.addEventListener('mousemove', function(event) {
+                if (isMouseDown) {
+                    const deltaX = event.clientX - lastMouseX;
+                    const deltaY = event.clientY - lastMouseY;
+
+                    // Update rotation angles
+                    cameraRotationY += deltaX * 0.01;
+                    cameraRotationX += deltaY * 0.01;
+
+                    // Clamp vertical rotation to prevent flipping
+                    cameraRotationX = Math.max(-Math.PI/2, Math.min(Math.PI/2, cameraRotationX));
+
+                    updateCameraPosition();
+
+                    lastMouseX = event.clientX;
+                    lastMouseY = event.clientY;
+                }
+            });
+
+            renderer.domElement.addEventListener('mouseup', function(event) {
+                if (event.button === 0) {
+                    isMouseDown = false;
+                }
+            });
+
+            // Zoom with mouse wheel
+            renderer.domElement.addEventListener('wheel', function(event) {
+                event.preventDefault();
+                const zoomSpeed = 0.5;
+                cameraDistance += event.deltaY > 0 ? zoomSpeed : -zoomSpeed;
+                cameraDistance = Math.max(1, Math.min(20, cameraDistance)); // Clamp distance
+                updateCameraPosition();
+            });
+
+            // Initialize camera position
+            updateCameraPosition();
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 10, 5);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+
+            // Ground
+            createGround();
+
+            // Add IK targets to scene
+            createIKTargets();
+
+            // Load YBot
+            loadYBot();
+
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        function createGround() {
+            const geometry = new THREE.PlaneGeometry(20, 20);
+            const material = new THREE.MeshLambertMaterial({
+                color: 0x90EE90,
+                transparent: true,
+                opacity: 0.8
+            });
+            ground = new THREE.Mesh(geometry, material);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Add grid helper
+            const gridHelper = new THREE.GridHelper(20, 20);
+            scene.add(gridHelper);
+        }
+
+        function createIKTargets() {
+            // Create visual targets for different body parts
+            const targetConfigs = {
+                leftHand: { color: 0xff0000, position: [0.5, 1.5, 0.5] },
+                rightHand: { color: 0x0000ff, position: [-0.5, 1.5, 0.5] },
+                leftFoot: { color: 0xff8800, position: [0.15, 0.1, 0.2] },
+                rightFoot: { color: 0x0088ff, position: [-0.15, 0.1, 0.2] },
+                head: { color: 0x88ff00, position: [0, 1.8, 0] }
+            };
+
+            for (const [name, config] of Object.entries(targetConfigs)) {
+                ikTargets[name] = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.03),
+                    new THREE.MeshBasicMaterial({ color: config.color, transparent: true, opacity: 0.7 })
+                );
+                ikTargets[name].position.set(...config.position);
+                ikTargets[name].visible = false; // Hidden by default
+                scene.add(ikTargets[name]);
+            }
+        }
+
+        function loadYBot() {
+            const loader = new THREE.FBXLoader();
+
+            loader.load(
+                './assets/YBot.fbx',
+                function (object) {
+                    ybot = object;
+
+                    // Scale and position
+                    ybot.scale.setScalar(0.01); // FBX models are often too large
+                    ybot.position.set(0, 0, 0);
+
+                    // Enable shadows
+                    ybot.traverse(function (child) {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+
+                    scene.add(ybot);
+                    console.log('YBot loaded successfully');
+
+                    // Initialize IK after YBot loads
+                    setTimeout(initFullBodyIK, 100); // Small delay to ensure bones are ready
+                },
+                function (progress) {
+                    console.log('Loading progress:', (progress.loaded / progress.total * 100) + '%');
+                },
+                function (error) {
+                    console.error('Error loading YBot:', error);
+                    // Create a placeholder if loading fails
+                    createPlaceholderYBot();
+                }
+            );
+        }
+
+        function initFullBodyIK() {
+            if (!ybot || !ybot.skeleton) {
+                console.warn('YBot skeleton not available for IK');
+                return;
+            }
+
+            console.log('Initializing full body IK system...');
+
+            // Create IK solver
+            ikSolver = new IK.IK();
+
+            const bones = ybot.skeleton.bones;
+            const findBone = (name) => bones.find(bone => bone.name.toLowerCase().includes(name.toLowerCase()));
+
+            // Helper function to create chain
+            const createChain = (boneNames, targetName) => {
+                const chainBones = boneNames.map(name => findBone(name)).filter(bone => bone);
+                if (chainBones.length >= 2) {
+                    const chain = new IK.IKChain();
+                    chainBones.forEach(bone => chain.add(new IK.IKJoint(bone)));
+                    if (ikTargets[targetName]) {
+                        chain.setTarget(ikTargets[targetName].position);
+                    }
+                    ikSolver.add(chain);
+                    ikChains[targetName] = chain;
+                    console.log(`${targetName} IK chain created with ${chainBones.length} joints`);
+                    return chain;
+                }
+                return null;
+            };
+
+            // Create chains for different body parts
+            // Arms
+            createChain(['LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand'], 'leftHand');
+            createChain(['RightShoulder', 'RightArm', 'RightForeArm', 'RightHand'], 'rightHand');
+
+            // Legs (if available)
+            createChain(['LeftUpLeg', 'LeftLeg', 'LeftFoot'], 'leftFoot');
+            createChain(['RightUpLeg', 'RightLeg', 'RightFoot'], 'rightFoot');
+
+            // Spine/Head (if available)
+            createChain(['Spine', 'Spine1', 'Neck', 'Head'], 'head');
+
+            console.log('Full body IK system initialized with', ikSolver.chains.length, 'chains');
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update IK solver
+            if (ikSolver) {
+                ikSolver.solve();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function resetCamera() {
+            cameraDistance = 5;
+            cameraRotationX = 0;
+            cameraRotationY = 0;
+            updateCameraPosition();
+        }
+
+        function toggleWireframe() {
+            if (ybot) {
+                ybot.traverse(function (child) {
+                    if (child.isMesh && child.material) {
+                        child.material.wireframe = !child.material.wireframe;
+                    }
+                });
+            }
+        }
+
+        function moveIKTarget(targetName, x, y, z) {
+            const target = ikTargets[targetName];
+            if (target) {
+                target.position.set(x, y, z);
+                // Update IK chain target
+                if (ikChains[targetName]) {
+                    ikChains[targetName].setTarget(target.position);
+                }
+            }
+        }
+
+        function applyPosePreset(presetName) {
+            const preset = posePresets[presetName];
+            if (!preset) return;
+
+            console.log('Applying pose:', preset.description);
+
+            // Apply hand positions
+            if (preset.leftHand) {
+                moveIKTarget('leftHand', ...preset.leftHand);
+            }
+            if (preset.rightHand) {
+                moveIKTarget('rightHand', ...preset.rightHand);
+            }
+
+            // Show targets briefly for visual feedback
+            showTargetsTemporarily();
+        }
+
+        function showTargetsTemporarily() {
+            // Make targets visible for 2 seconds
+            Object.values(ikTargets).forEach(target => {
+                target.visible = true;
+            });
+
+            setTimeout(() => {
+                Object.values(ikTargets).forEach(target => {
+                    target.visible = false;
+                });
+            }, 2000);
+        }
+
+        function showTargetsTemporarily() {
+            // Make targets visible for 2 seconds
+            Object.values(ikTargets).forEach(target => {
+                target.visible = true;
+            });
+
+            setTimeout(() => {
+                Object.values(ikTargets).forEach(target => {
+                    target.visible = false;
+                });
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

@@ -39,6 +39,72 @@ class CylinderCollider {
         this.createBoneCylinders();
     }
 
+    calculateBoneRadius(bone, child, length) {
+        const boneName = bone.name.toLowerCase();
+        let baseRadius;
+
+        // Different radius calculations based on bone type
+        if (boneName.includes('spine') || boneName.includes('neck') || boneName.includes('head')) {
+            // Torso bones - thicker for stability
+            baseRadius = Math.max(0.03, length * 0.15);
+        } else if (boneName.includes('arm') || boneName.includes('forearm') || boneName.includes('hand')) {
+            // Arm bones - medium thickness
+            baseRadius = Math.max(0.025, length * 0.12);
+        } else if (boneName.includes('leg') || boneName.includes('upleg') || boneName.includes('foot')) {
+            // Leg bones - thicker for weight-bearing
+            baseRadius = Math.max(0.035, length * 0.18);
+        } else if (boneName.includes('shoulder') || boneName.includes('clavicle')) {
+            // Shoulder bones - wider joints
+            baseRadius = Math.max(0.04, length * 0.2);
+        } else if (boneName.includes('hips') || boneName.includes('pelvis')) {
+            // Hip bones - thickest for core stability
+            baseRadius = Math.max(0.05, length * 0.25);
+        } else {
+            // Default for unknown bones
+            baseRadius = Math.max(0.02, length * 0.1);
+        }
+
+        // Consider bone scale if available
+        if (bone.scale) {
+            const avgScale = (bone.scale.x + bone.scale.y + bone.scale.z) / 3;
+            baseRadius *= Math.max(0.5, Math.min(2.0, avgScale)); // Scale radius by bone scale, clamped
+        }
+
+        // Consider distance to sibling bones for more realistic proportions
+        const siblingRadius = this.estimateRadiusFromSiblings(bone, length);
+        if (siblingRadius > 0) {
+            baseRadius = Math.min(baseRadius, siblingRadius * 1.2); // Don't exceed sibling-based estimate too much
+        }
+
+        return baseRadius * this.radiusMultiplier;
+    }
+
+    estimateRadiusFromSiblings(bone, length) {
+        if (!bone.parent || !bone.parent.children) return 0;
+
+        let totalRadius = 0;
+        let siblingCount = 0;
+
+        // Check sibling bones at the same level
+        bone.parent.children.forEach(sibling => {
+            if (sibling !== bone && sibling.isBone && sibling.children && sibling.children.length > 0) {
+                sibling.children.forEach(child => {
+                    if (child.isBone) {
+                        const siblingLength = sibling.position.distanceTo(child.position);
+                        if (siblingLength > 0.01) {
+                            // Estimate radius based on sibling bone proportions
+                            const siblingRadius = Math.max(0.02, siblingLength * 0.08);
+                            totalRadius += siblingRadius;
+                            siblingCount++;
+                        }
+                    }
+                });
+            }
+        });
+
+        return siblingCount > 0 ? totalRadius / siblingCount : 0;
+    }
+
     createBoneCylinders() {
         this.cylinders = [];
         if (!this.ybot || !this.ybot.bones) return;
@@ -74,8 +140,8 @@ class CylinderCollider {
                         const length = direction.length();
 
                         if (length > 0.001) {
-                            // Calculate radius based on bone length (thicker bones for longer segments)
-                            const radius = Math.max(0.02, length * 0.1) * this.radiusMultiplier;
+                            // Calculate radius based on bone type and characteristics
+                            const radius = this.calculateBoneRadius(bone, child, length);
 
                             this.cylinders.push({
                                 start: boneWorldPos.clone(),

@@ -42,6 +42,7 @@ function updateVisualizationButtons() {
     const jointBtn = document.getElementById('jointToggleBtn');
     const boneBtn = document.getElementById('boneToggleBtn');
     const collisionBtn = document.getElementById('collisionToggleBtn');
+    const ybotVisibilityBtn = document.getElementById('ybotVisibilityBtn');
 
     if (jointBtn) {
         jointBtn.textContent = showJoints ? '🔴 Hide Joints' : '🔴 Show Joints';
@@ -51,6 +52,12 @@ function updateVisualizationButtons() {
     }
     if (collisionBtn) {
         collisionBtn.textContent = showCollision ? '🔵 Hide Collision' : '🔵 Show Collision';
+    }
+
+    // Set YBot visibility button state
+    if (ybotVisibilityBtn && ybotInstance) {
+        const isVisible = ybotInstance.object3D.visible;
+        ybotVisibilityBtn.textContent = isVisible ? '👤 Hide YBot' : '👤 Show YBot';
     }
 }
 
@@ -91,6 +98,17 @@ function toggleCollisionVisualization() {
     } else {
         clearCollisionVisualization();
     }
+}
+
+function toggleYBotVisibility() {
+    if (!ybotInstance) return;
+
+    const isVisible = ybotInstance.object3D.visible;
+    ybotInstance.object3D.visible = !isVisible;
+    saveVisualizationState('ybot_visible', !isVisible);
+
+    const btn = document.getElementById('ybotVisibilityBtn');
+    btn.textContent = !isVisible ? '👤 Show YBot' : '👤 Hide YBot';
 }
 
 function createJointVisualization() {
@@ -199,31 +217,31 @@ function createCollisionVisualization() {
         return;
     }
 
-    // Find the cylinder collider in the collision system
-    let cylinderCollider = null;
+    // Find the capsule collider in the collision system
+    let capsuleCollider = null;
     for (const collider of collisionSystem.colliders) {
-        if (collider instanceof CylinderCollider) {
-            cylinderCollider = collider;
+        if (collider instanceof CapsuleCollider) {
+            capsuleCollider = collider;
             break;
         }
     }
 
-    if (!cylinderCollider) {
-        console.warn('No CylinderCollider found in collision system');
+    if (!capsuleCollider) {
+        console.warn('No CapsuleCollider found in collision system');
         return;
     }
 
-    // Update cylinders to ensure they have current positions
-    cylinderCollider.updateCylinders();
+    // Update capsules to ensure they have current positions
+    capsuleCollider.updateCapsules();
 
     // Get visualization meshes
-    const meshes = cylinderCollider.getVisualizationMeshes();
+    const meshes = capsuleCollider.getVisualizationMeshes();
     meshes.forEach(mesh => {
         scene.add(mesh);
         collisionVisualizations.push(mesh);
     });
 
-    console.log(`Created ${collisionVisualizations.length} collision cylinder visualizations`);
+    console.log(`Created ${collisionVisualizations.length} collision capsule visualizations`);
 }
 
 function clearCollisionVisualization() {
@@ -236,22 +254,22 @@ function clearCollisionVisualization() {
 function updateCollisionVisualization() {
     if (!showCollision || collisionVisualizations.length === 0) return;
 
-    // Find the cylinder collider
-    let cylinderCollider = null;
+    // Find the capsule collider
+    let capsuleCollider = null;
     for (const collider of collisionSystem.colliders) {
-        if (collider instanceof CylinderCollider) {
-            cylinderCollider = collider;
+        if (collider instanceof CapsuleCollider) {
+            capsuleCollider = collider;
             break;
         }
     }
 
-    if (!cylinderCollider) return;
+    if (!capsuleCollider) return;
 
-    // Update cylinder positions
-    cylinderCollider.updateCylinders();
+    // Update capsule positions
+    capsuleCollider.updateCapsules();
 
     // Update visualization meshes
-    const updatedMeshes = cylinderCollider.getVisualizationMeshes();
+    const updatedMeshes = capsuleCollider.getVisualizationMeshes();
 
     // Remove old meshes
     clearCollisionVisualization();
@@ -550,17 +568,29 @@ function loadYBot() {
                     ybotInstance.setIKTarget('rightFoot', [-0.15, 0.05, 0.1]);
                     ybotInstance.setIKTarget('head', [0, 1.6, 0]);
 
-                    // Initialize cylinder-based collision system
-                    const cylinderCollider = new CylinderCollider(ybotInstance, 1.0);
-                    collisionSystem.addCollider(cylinderCollider);
-                    console.log('Cylinder-based collision system initialized');
+                    // Initialize capsule-based collision system
+                    const capsuleCollider = new CapsuleCollider(ybotInstance, 1.0);
+                    collisionSystem.addCollider(capsuleCollider);
+                    console.log('Capsule-based collision system initialized');
 
                     // Apply saved visualization states
                     setTimeout(() => {
                         if (showJoints) createJointVisualization();
                         if (showBones) createBoneVisualization();
                         if (showCollision) createCollisionVisualization();
-                        console.log('Applied saved visualization states');
+
+                        // Apply saved YBot visibility
+                        const savedVisible = localStorage.getItem('ybot_visible');
+                        if (savedVisible !== null && ybotInstance) {
+                            const isVisible = savedVisible === 'true';
+                            ybotInstance.object3D.visible = isVisible;
+                            const btn = document.getElementById('ybotVisibilityBtn');
+                            if (btn) {
+                                btn.textContent = isVisible ? '👤 Hide YBot' : '👤 Show YBot';
+                            }
+                        }
+
+                        console.log('Applied saved visualization states and YBot visibility');
                     }, 200); // Extra delay to ensure everything is ready
                 }
             }, 100); // Small delay to ensure bones are ready

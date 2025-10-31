@@ -36,7 +36,12 @@ class YBot {
                 }
             });
         }
-        console.log(`YBot: Found ${this.bones.length} bones`);
+
+        console.log(`YBot: Found ${this.bones.length} bones:`);
+        this.bones.forEach((bone, index) => {
+            const childCount = bone.children ? bone.children.filter(c => c.isBone).length : 0;
+            console.log(`  ${index}: ${bone.name} (children: ${childCount})`);
+        });
     }
 
     createIKChains() {

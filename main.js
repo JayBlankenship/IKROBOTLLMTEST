@@ -14,6 +14,291 @@ let currentPoseIndex = -1;
 let llmProvider = 'webllm'; // 'webllm' or 'openai'
 let openaiApiKey = '';
 
+// Debug visualization
+let boneVisualizations = [];
+let jointVisualizations = [];
+let collisionVisualizations = [];
+let showBones = false;
+let showJoints = false;
+let showCollision = false;
+
+// Load visualization states from localStorage
+function loadVisualizationStates() {
+    showJoints = localStorage.getItem('ybot_showJoints') === 'true';
+    showBones = localStorage.getItem('ybot_showBones') === 'true';
+    showCollision = localStorage.getItem('ybot_showCollision') === 'true';
+
+    // Update button states
+    updateVisualizationButtons();
+}
+
+// Save visualization state to localStorage
+function saveVisualizationState(key, value) {
+    localStorage.setItem(key, value.toString());
+}
+
+// Update button text and states based on current values
+function updateVisualizationButtons() {
+    const jointBtn = document.getElementById('jointToggleBtn');
+    const boneBtn = document.getElementById('boneToggleBtn');
+    const collisionBtn = document.getElementById('collisionToggleBtn');
+
+    if (jointBtn) {
+        jointBtn.textContent = showJoints ? '🔴 Hide Joints' : '🔴 Show Joints';
+    }
+    if (boneBtn) {
+        boneBtn.textContent = showBones ? '🦴 Hide Bones' : '🦴 Show Bones';
+    }
+    if (collisionBtn) {
+        collisionBtn.textContent = showCollision ? '🔵 Hide Collision' : '🔵 Show Collision';
+    }
+}
+
+function toggleJointVisualization() {
+    showJoints = !showJoints;
+    saveVisualizationState('ybot_showJoints', showJoints);
+    const btn = document.getElementById('jointToggleBtn');
+    btn.textContent = showJoints ? '🔴 Hide Joints' : '🔴 Show Joints';
+
+    if (showJoints) {
+        createJointVisualization();
+    } else {
+        clearJointVisualization();
+    }
+}
+
+function toggleBoneVisualization() {
+    showBones = !showBones;
+    saveVisualizationState('ybot_showBones', showBones);
+    const btn = document.getElementById('boneToggleBtn');
+    btn.textContent = showBones ? '🦴 Hide Bones' : '🦴 Show Bones';
+
+    if (showBones) {
+        createBoneVisualization();
+    } else {
+        clearBoneVisualization();
+    }
+}
+
+function toggleCollisionVisualization() {
+    showCollision = !showCollision;
+    saveVisualizationState('ybot_showCollision', showCollision);
+    const btn = document.getElementById('collisionToggleBtn');
+    btn.textContent = showCollision ? '🔵 Hide Collision' : '🔵 Show Collision';
+
+    if (showCollision) {
+        createCollisionVisualization();
+    } else {
+        clearCollisionVisualization();
+    }
+}
+
+function createJointVisualization() {
+    clearJointVisualization(); // Clear any existing
+
+    if (!ybotInstance || !ybotInstance.bones) {
+        console.warn('No YBot instance or bones available for joint visualization');
+        console.log('ybotInstance:', ybotInstance);
+        console.log('ybotInstance.bones:', ybotInstance ? ybotInstance.bones : 'undefined');
+        return;
+    }
+
+    // Ensure world matrices are up to date
+    if (ybotInstance.object3D) {
+        ybotInstance.object3D.updateMatrixWorld(true);
+    }
+
+    const jointMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.7 });
+    const jointGeometry = new THREE.SphereGeometry(0.01, 8, 6);
+
+    console.log('Creating joint visualizations for', ybotInstance.bones.length, 'bones');
+
+    ybotInstance.bones.forEach((bone, index) => {
+        const worldPos = new THREE.Vector3();
+        bone.getWorldPosition(worldPos);
+        console.log(`Bone ${index}: ${bone.name} at world position`, worldPos);
+        // Create joint sphere at bone world position
+        const jointMesh = new THREE.Mesh(jointGeometry, jointMaterial);
+        jointMesh.position.copy(worldPos);
+        jointMesh.userData.bone = bone;
+        scene.add(jointMesh);
+        jointVisualizations.push(jointMesh);
+    });
+
+    console.log(`Created ${jointVisualizations.length} joint visualizations`);
+}
+
+function createBoneVisualization() {
+    clearBoneVisualization(); // Clear any existing
+
+    if (!ybotInstance || !ybotInstance.bones) {
+        console.warn('No bones available for bone visualization');
+        return;
+    }
+
+    // Ensure world matrices are up to date
+    if (ybotInstance.object3D) {
+        ybotInstance.object3D.updateMatrixWorld(true);
+    }
+
+    const boneMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.7 });
+    const boneGeometry = new THREE.CylinderGeometry(0.005, 0.005, 1, 8);
+
+    console.log('Creating bone visualizations for', ybotInstance.bones.length, 'bones');
+
+    ybotInstance.bones.forEach(bone => {
+        // Create bone cylinder from parent to child
+        if (bone.children && bone.children.length > 0) {
+            bone.children.forEach(child => {
+                if (child.isBone) {
+                    const boneWorldPos = new THREE.Vector3();
+                    const childWorldPos = new THREE.Vector3();
+                    bone.getWorldPosition(boneWorldPos);
+                    child.getWorldPosition(childWorldPos);
+
+                    const direction = new THREE.Vector3().subVectors(childWorldPos, boneWorldPos);
+                    const length = direction.length();
+
+                    if (length > 0.001) { // Only create cylinders for meaningful distances
+                        const boneMesh = new THREE.Mesh(boneGeometry, boneMaterial);
+                        boneMesh.position.copy(boneWorldPos).add(direction.clone().multiplyScalar(0.5));
+                        boneMesh.scale.y = length;
+                        boneMesh.lookAt(childWorldPos);
+                        boneMesh.userData.bone = bone;
+                        boneMesh.userData.child = child;
+                        scene.add(boneMesh);
+                        boneVisualizations.push(boneMesh);
+                    }
+                }
+            });
+        }
+    });
+
+    console.log(`Created ${boneVisualizations.length} bone visualizations`);
+}
+
+function clearJointVisualization() {
+    jointVisualizations.forEach(mesh => {
+        scene.remove(mesh);
+    });
+    jointVisualizations = [];
+}
+
+function clearBoneVisualization() {
+    boneVisualizations.forEach(mesh => {
+        scene.remove(mesh);
+    });
+    boneVisualizations = [];
+}
+
+function createCollisionVisualization() {
+    clearCollisionVisualization(); // Clear any existing
+
+    if (!ybotInstance || !collisionSystem) {
+        console.warn('No YBot instance or collision system available for collision visualization');
+        return;
+    }
+
+    // Find the cylinder collider in the collision system
+    let cylinderCollider = null;
+    for (const collider of collisionSystem.colliders) {
+        if (collider instanceof CylinderCollider) {
+            cylinderCollider = collider;
+            break;
+        }
+    }
+
+    if (!cylinderCollider) {
+        console.warn('No CylinderCollider found in collision system');
+        return;
+    }
+
+    // Update cylinders to ensure they have current positions
+    cylinderCollider.updateCylinders();
+
+    // Get visualization meshes
+    const meshes = cylinderCollider.getVisualizationMeshes();
+    meshes.forEach(mesh => {
+        scene.add(mesh);
+        collisionVisualizations.push(mesh);
+    });
+
+    console.log(`Created ${collisionVisualizations.length} collision cylinder visualizations`);
+}
+
+function clearCollisionVisualization() {
+    collisionVisualizations.forEach(mesh => {
+        scene.remove(mesh);
+    });
+    collisionVisualizations = [];
+}
+
+function updateCollisionVisualization() {
+    if (!showCollision || collisionVisualizations.length === 0) return;
+
+    // Find the cylinder collider
+    let cylinderCollider = null;
+    for (const collider of collisionSystem.colliders) {
+        if (collider instanceof CylinderCollider) {
+            cylinderCollider = collider;
+            break;
+        }
+    }
+
+    if (!cylinderCollider) return;
+
+    // Update cylinder positions
+    cylinderCollider.updateCylinders();
+
+    // Update visualization meshes
+    const updatedMeshes = cylinderCollider.getVisualizationMeshes();
+
+    // Remove old meshes
+    clearCollisionVisualization();
+
+    // Add updated meshes
+    updatedMeshes.forEach(mesh => {
+        scene.add(mesh);
+        collisionVisualizations.push(mesh);
+    });
+}
+
+function updateJointVisualization() {
+    if (!showJoints || jointVisualizations.length === 0) return;
+
+    jointVisualizations.forEach(mesh => {
+        if (mesh.userData.bone) {
+            const worldPos = new THREE.Vector3();
+            mesh.userData.bone.getWorldPosition(worldPos);
+            mesh.position.copy(worldPos);
+        }
+    });
+}
+
+function updateBoneVisualization() {
+    if (!showBones || boneVisualizations.length === 0) return;
+
+    boneVisualizations.forEach(mesh => {
+        if (mesh.userData.bone && mesh.userData.child) {
+            const bone = mesh.userData.bone;
+            const child = mesh.userData.child;
+            const boneWorldPos = new THREE.Vector3();
+            const childWorldPos = new THREE.Vector3();
+            bone.getWorldPosition(boneWorldPos);
+            child.getWorldPosition(childWorldPos);
+
+            const direction = new THREE.Vector3().subVectors(childWorldPos, boneWorldPos);
+            const length = direction.length();
+
+            if (length > 0.001) {
+                mesh.position.copy(boneWorldPos).add(direction.clone().multiplyScalar(0.5));
+                mesh.scale.y = length;
+                mesh.lookAt(childWorldPos);
+            }
+        }
+    });
+}
+
 // Camera control variables
 let cameraDistance = 5;
 let cameraRotationX = 0;
@@ -35,6 +320,9 @@ function checkLibrariesLoaded() {
 }
 
 function init() {
+    // Load saved visualization states from localStorage
+    loadVisualizationStates();
+
     // Scene setup
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB); // Sky blue
@@ -202,6 +490,25 @@ function loadYBot() {
             console.log('YBot skeleton:', ybot.skeleton);
             console.log('Skeleton bones count:', ybot.skeleton ? ybot.skeleton.bones.length : 0);
 
+            // Debug: Inspect mesh structure
+            console.log('=== YBOT MESH STRUCTURE ===');
+            let meshCount = 0;
+            object.traverse((child) => {
+                if (child.isMesh) {
+                    meshCount++;
+                    console.log(`Mesh #${meshCount}: ${child.name}`);
+                    console.log(`  Type: ${child.type}`);
+                    console.log(`  Geometry: ${child.geometry.type}`);
+                    console.log(`  Vertices: ${child.geometry.attributes.position.count}`);
+                    console.log(`  Material: ${child.material ? child.material.name : 'none'}`);
+                    console.log(`  Parent: ${child.parent ? child.parent.name : 'none'}`);
+                    console.log(`  Alpha_Surface?: ${child.name.includes('Alpha_Surface')}`);
+                    console.log('---');
+                }
+            });
+            console.log(`Total meshes found: ${meshCount}`);
+            console.log('=== END MESH STRUCTURE ===');
+
             // Check if the model has a proper skeleton for IK
             // More thorough check for bones in FBX structure
             let hasBones = false;
@@ -242,6 +549,19 @@ function loadYBot() {
                     ybotInstance.setIKTarget('leftFoot', [0.15, 0.05, 0.1]);
                     ybotInstance.setIKTarget('rightFoot', [-0.15, 0.05, 0.1]);
                     ybotInstance.setIKTarget('head', [0, 1.6, 0]);
+
+                    // Initialize cylinder-based collision system
+                    const cylinderCollider = new CylinderCollider(ybotInstance, 1.0);
+                    collisionSystem.addCollider(cylinderCollider);
+                    console.log('Cylinder-based collision system initialized');
+
+                    // Apply saved visualization states
+                    setTimeout(() => {
+                        if (showJoints) createJointVisualization();
+                        if (showBones) createBoneVisualization();
+                        if (showCollision) createCollisionVisualization();
+                        console.log('Applied saved visualization states');
+                    }, 200); // Extra delay to ensure everything is ready
                 }
             }, 100); // Small delay to ensure bones are ready
         },
@@ -411,6 +731,11 @@ function animate(currentTime = 0) {
             applySimpleIK();
         }
     }
+
+    // Update bone and joint visualizations if enabled
+    updateJointVisualization();
+    updateBoneVisualization();
+    updateCollisionVisualization();
 
     renderer.render(scene, camera);
 }

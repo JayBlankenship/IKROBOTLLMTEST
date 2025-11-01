@@ -433,7 +433,19 @@ class CapsuleCollider {
             cylinderMesh.userData.capsule = capsule;
             meshes.push(cylinderMesh);
 
-            // Note: Removed spheres at joints to avoid confusion - capsules are now clearly between joints
+            // Create sphere at start (capsule end cap)
+            const startSphereGeometry = new THREE.SphereGeometry(capsule.radius, 8, 6);
+            const startSphereMesh = new THREE.Mesh(startSphereGeometry, material);
+            startSphereMesh.position.copy(capsule.start);
+            startSphereMesh.userData.capsule = capsule;
+            meshes.push(startSphereMesh);
+
+            // Create sphere at end (capsule end cap)
+            const endSphereGeometry = new THREE.SphereGeometry(capsule.radius, 8, 6);
+            const endSphereMesh = new THREE.Mesh(endSphereGeometry, material);
+            endSphereMesh.position.copy(capsule.end);
+            endSphereMesh.userData.capsule = capsule;
+            meshes.push(endSphereMesh);
         });
 
         return meshes;

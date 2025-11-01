@@ -105,22 +105,36 @@ class CapsuleCollider {
                         child.getWorldPosition(childWorldPos);
 
                         const direction = new THREE.Vector3().subVectors(childWorldPos, boneWorldPos);
-                        const length = direction.length();
+                        const fullLength = direction.length();
 
-                        if (length > 0.001) {
+                        if (fullLength > 0.001) {
+                            // Shorten the capsule so it doesn't extend all the way to joint centers
+                            // Make it 80% of the full distance between joints
+                            const capsuleLength = fullLength * 0.8;
+                            const halfCapsule = capsuleLength / 2;
+
+                            // Position capsule centered between joints but shorter
+                            const midpoint = new THREE.Vector3()
+                                .addVectors(boneWorldPos, childWorldPos)
+                                .multiplyScalar(0.5);
+
+                            const capsuleDirection = direction.clone().normalize();
+                            const start = midpoint.clone().addScaledVector(capsuleDirection, -halfCapsule);
+                            const end = midpoint.clone().addScaledVector(capsuleDirection, halfCapsule);
+
                             // Calculate radius based on bone type and characteristics
-                            const radius = this.calculateBoneRadius(bone, child, length);
+                            const radius = this.calculateBoneRadius(bone, child, capsuleLength);
 
                             this.capsules.push({
-                                start: boneWorldPos.clone(),
-                                end: childWorldPos.clone(),
+                                start: start,
+                                end: end,
                                 radius: radius,
-                                length: length,
+                                length: capsuleLength,
                                 bone: bone,
                                 child: child
                             });
 
-                            console.log(`Capsule: ${bone.name} -> ${child.name}, length: ${length.toFixed(3)}, radius: ${radius.toFixed(3)}`);
+                            console.log(`Capsule: ${bone.name} -> ${child.name}, full length: ${fullLength.toFixed(3)}, capsule length: ${capsuleLength.toFixed(3)}, radius: ${radius.toFixed(3)}`);
                         }
                     }
                 });
@@ -144,11 +158,24 @@ class CapsuleCollider {
             capsule.bone.getWorldPosition(boneWorldPos);
             capsule.child.getWorldPosition(childWorldPos);
 
-            capsule.start.copy(boneWorldPos);
-            capsule.end.copy(childWorldPos);
-
             const direction = new THREE.Vector3().subVectors(childWorldPos, boneWorldPos);
-            capsule.length = direction.length();
+            const fullLength = direction.length();
+
+            if (fullLength > 0.001) {
+                // Use same shortening logic as createBoneCapsules
+                const capsuleLength = fullLength * 0.8;
+                const halfCapsule = capsuleLength / 2;
+
+                // Position capsule centered between joints but shorter
+                const midpoint = new THREE.Vector3()
+                    .addVectors(boneWorldPos, childWorldPos)
+                    .multiplyScalar(0.5);
+
+                const capsuleDirection = direction.clone().normalize();
+                capsule.start.copy(midpoint).addScaledVector(capsuleDirection, -halfCapsule);
+                capsule.end.copy(midpoint).addScaledVector(capsuleDirection, halfCapsule);
+                capsule.length = capsuleLength;
+            }
         });
     }
 
@@ -389,11 +416,11 @@ class CapsuleCollider {
         });
 
         this.capsules.forEach(capsule => {
-            // Create cylinder part of capsule
+            // Create cylinder part of capsule (between joints)
             const cylinderGeometry = new THREE.CylinderGeometry(capsule.radius, capsule.radius, capsule.length, 8);
             const cylinderMesh = new THREE.Mesh(cylinderGeometry, material);
 
-            // Position and orient the cylinder
+            // Position and orient the cylinder between the joints
             const midpoint = new THREE.Vector3()
                 .addVectors(capsule.start, capsule.end)
                 .multiplyScalar(0.5);
@@ -406,19 +433,7 @@ class CapsuleCollider {
             cylinderMesh.userData.capsule = capsule;
             meshes.push(cylinderMesh);
 
-            // Create sphere at start
-            const startSphereGeometry = new THREE.SphereGeometry(capsule.radius, 8, 6);
-            const startSphereMesh = new THREE.Mesh(startSphereGeometry, material);
-            startSphereMesh.position.copy(capsule.start);
-            startSphereMesh.userData.capsule = capsule;
-            meshes.push(startSphereMesh);
-
-            // Create sphere at end
-            const endSphereGeometry = new THREE.SphereGeometry(capsule.radius, 8, 6);
-            const endSphereMesh = new THREE.Mesh(endSphereGeometry, material);
-            endSphereMesh.position.copy(capsule.end);
-            endSphereMesh.userData.capsule = capsule;
-            meshes.push(endSphereMesh);
+            // Note: Removed spheres at joints to avoid confusion - capsules are now clearly between joints
         });
 
         return meshes;

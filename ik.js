@@ -24,6 +24,21 @@ class CustomIKSolver {
         }
     }
 
+    solveChains(chainNames) {
+        for (const chain of this.chains) {
+            // Check if this chain's name matches any in the allowed list
+            const chainName = Object.keys(ybotInstance.ikChains).find(name => ybotInstance.ikChains[name] === chain);
+            if (chainNames.includes(chainName) && chain.target && chain.joints.length > 1) {
+                this.solveChain(chain);
+            }
+        }
+
+        // Update the entire YBot object after solving chains
+        if (ybot) {
+            ybot.updateMatrixWorld(true);
+        }
+    }
+
     solveChain(chain) {
         const target = chain.target;
         const joints = chain.joints;

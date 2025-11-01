@@ -88,9 +88,17 @@ class YBot {
         }
     }
 
-    updateIK() {
+    updateIK(physicsMode = false) {
         if (this.isInitialized) {
-            this.ikSolver.solve();
+            // In physics mode, skip spine-related IK chains to allow natural deformation
+            if (physicsMode) {
+                // Only solve non-spine chains (hands and feet)
+                this.ikSolver.solveChains(['leftHand', 'rightHand', 'leftFoot', 'rightFoot']);
+            } else {
+                // Normal IK solving for all chains
+                this.ikSolver.solve();
+            }
+
             if (this.object3D) {
                 this.object3D.updateMatrixWorld(true);
             }
@@ -117,8 +125,9 @@ class YBot {
         if (collisionSystem) {
             const collision = collisionSystem.checkCollisions(this);
             if (collision) {
-                // Resolve collision
+                // Resolve collision by moving out of penetration
                 this.object3D.position.copy(prevPosition);
+                this.object3D.position.add(collision.normal.clone().multiplyScalar(collision.penetration));
 
                 // Handle floor collision
                 if (collision.normal.y > 0) {

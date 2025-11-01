@@ -268,16 +268,27 @@ function updateCollisionVisualization() {
     // Update capsule positions
     capsuleCollider.updateCapsules();
 
-    // Update visualization meshes
-    const updatedMeshes = capsuleCollider.getVisualizationMeshes();
+    // Update existing visualization meshes in place (much more efficient)
+    capsuleCollider.capsules.forEach((capsule, index) => {
+        if (index * 3 < collisionVisualizations.length) {
+            const cylinderMesh = collisionVisualizations[index * 3];
+            const startSphereMesh = collisionVisualizations[index * 3 + 1];
+            const endSphereMesh = collisionVisualizations[index * 3 + 2];
 
-    // Remove old meshes
-    clearCollisionVisualization();
+            // Update cylinder position and orientation
+            const midpoint = new THREE.Vector3()
+                .addVectors(capsule.start, capsule.end)
+                .multiplyScalar(0.5);
+            cylinderMesh.position.copy(midpoint);
 
-    // Add updated meshes
-    updatedMeshes.forEach(mesh => {
-        scene.add(mesh);
-        collisionVisualizations.push(mesh);
+            const direction = new THREE.Vector3().subVectors(capsule.end, capsule.start);
+            cylinderMesh.lookAt(capsule.end);
+            cylinderMesh.rotateX(Math.PI / 2);
+
+            // Update sphere positions
+            startSphereMesh.position.copy(capsule.start);
+            endSphereMesh.position.copy(capsule.end);
+        }
     });
 }
 
@@ -755,7 +766,14 @@ function animate(currentTime = 0) {
     if (ikFrameCounter % 6 === 0) {
         // Use YBot IK system
         if (ybotInstance && ybotInstance.isInitialized) {
-            ybotInstance.updateIK();
+            // Enable physics mode (disable spine IK) when YBot has velocity or is not grounded
+            const physicsMode = ybotInstance && (
+                !ybotInstance.isGrounded ||
+                Math.abs(ybotInstance.velocity.x) > 0.01 ||
+                Math.abs(ybotInstance.velocity.y) > 0.01 ||
+                Math.abs(ybotInstance.velocity.z) > 0.01
+            );
+            ybotInstance.updateIK(physicsMode);
         } else {
             // Fallback to simple IK if YBot not ready
             applySimpleIK();

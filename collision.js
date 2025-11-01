@@ -433,19 +433,7 @@ class CapsuleCollider {
             cylinderMesh.userData.capsule = capsule;
             meshes.push(cylinderMesh);
 
-            // Create sphere at start (capsule end cap)
-            const startSphereGeometry = new THREE.SphereGeometry(capsule.radius, 8, 6);
-            const startSphereMesh = new THREE.Mesh(startSphereGeometry, material);
-            startSphereMesh.position.copy(capsule.start);
-            startSphereMesh.userData.capsule = capsule;
-            meshes.push(startSphereMesh);
-
-            // Create sphere at end (capsule end cap)
-            const endSphereGeometry = new THREE.SphereGeometry(capsule.radius, 8, 6);
-            const endSphereMesh = new THREE.Mesh(endSphereGeometry, material);
-            endSphereMesh.position.copy(capsule.end);
-            endSphereMesh.userData.capsule = capsule;
-            meshes.push(endSphereMesh);
+            // Simplified to cylinders only (no end spheres for better performance)
         });
 
         return meshes;
@@ -457,6 +445,9 @@ class FloorCollider {
         this.yLevel = yLevel;
         this.normal = new THREE.Vector3(0, 1, 0); // Upward normal
         this.radiusMultiplier = 1.0; // For capsule radius calculation
+        this.cachedCapsules = null;
+        this.lastCapsuleUpdate = 0;
+        this.capsuleUpdateInterval = 100; // Update cached capsules every 100ms
     }
 
     checkCollision(ybot) {
@@ -490,13 +481,47 @@ class FloorCollider {
         // Safety check - ensure YBot is properly initialized
         if (!ybot || !ybot.object3D) return null;
 
-        // Create YBot capsules and find collision with ground plane
-        const ybotCapsules = this.createBoneCapsules(ybot.bones);
+        // Update cached capsules if needed
+        const now = Date.now();
+        if (!this.cachedCapsules || now - this.lastCapsuleUpdate > this.capsuleUpdateInterval) {
+            this.cachedCapsules = this.createBoneCapsules(ybot.bones);
+            this.lastCapsuleUpdate = now;
+        }
+
+        // Update capsule positions based on current bone positions
+        if (ybot.object3D) {
+            ybot.object3D.updateMatrixWorld(true);
+        }
+
+        // Update cached capsule positions
+        this.cachedCapsules.forEach(capsule => {
+            const boneWorldPos = new THREE.Vector3();
+            const childWorldPos = new THREE.Vector3();
+            capsule.boneA.getWorldPosition(boneWorldPos);
+            capsule.boneB.getWorldPosition(childWorldPos);
+
+            const direction = new THREE.Vector3().subVectors(childWorldPos, boneWorldPos);
+            const fullLength = direction.length();
+
+            if (fullLength > 0.001) {
+                const capsuleLength = fullLength * 0.8;
+                const halfCapsule = capsuleLength / 2;
+
+                const midpoint = new THREE.Vector3()
+                    .addVectors(boneWorldPos, childWorldPos)
+                    .multiplyScalar(0.5);
+
+                const capsuleDirection = direction.clone().normalize();
+                capsule.start.copy(midpoint).addScaledVector(capsuleDirection, -halfCapsule);
+                capsule.end.copy(midpoint).addScaledVector(capsuleDirection, halfCapsule);
+                capsule.length = capsuleLength;
+            }
+        });
 
         let maxPenetration = 0;
         let hasCollision = false;
 
-        for (const capsule of ybotCapsules) {
+        for (const capsule of this.cachedCapsules) {
             if (this.capsuleIntersectsGround(capsule)) {
                 const penetration = this.calculateCapsuleGroundPenetration(capsule);
                 if (penetration > maxPenetration) {
@@ -507,9 +532,7 @@ class FloorCollider {
         }
 
         if (hasCollision && maxPenetration > 0.001) {
-            // Push the entire YBot up by the maximum penetration
-            ybot.object3D.position.y += maxPenetration;
-            console.log(`FloorCollider: Pushed YBot up by ${maxPenetration.toFixed(3)} due to capsule collision`);
+            console.log(`FloorCollider: Detected ground collision with ${maxPenetration.toFixed(3)} penetration`);
         }
 
         return {

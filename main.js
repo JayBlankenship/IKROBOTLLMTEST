@@ -559,12 +559,8 @@ function loadYBot() {
             console.log('Has bones:', hasBones, 'Count:', boneCount);
 
             if (!hasBones) {
-                console.warn('YBot model has no skeleton - using rigged placeholder for IK');
-                scene.remove(ybot);
-                createPlaceholderYBot();
-                setTimeout(() => {
-                    console.log('Using simple IK with placeholder robot');
-                }, 100);
+                console.error('YBot model has no skeleton - cannot perform IK operations');
+                alert('Error: YBot model loaded but has no skeleton. IK features will not work.');
                 return;
             }
 
@@ -611,128 +607,9 @@ function loadYBot() {
         },
         function (error) {
             console.error('Error loading YBot:', error);
-            // Create a placeholder if loading fails
-            createPlaceholderYBot();
-            setTimeout(() => {
-                console.log('Using simple IK with placeholder robot (fallback)');
-            }, 100);
+            alert('Failed to load YBot model. Please check that assets/YBot.fbx exists and is valid.');
         }
     );
-}
-
-function createPlaceholderYBot() {
-    console.log('Creating rigged placeholder YBot with IK-ready skeleton...');
-
-    // Create a simple humanoid with bones for IK
-    ybot = new THREE.Group();
-    ybot.name = 'YBot';
-
-    // Create materials
-    const bodyMaterial = new THREE.MeshLambertMaterial({ color: 0x4a90e2 });
-    const limbMaterial = new THREE.MeshLambertMaterial({ color: 0x7ed321 });
-
-    // Create body parts using available geometries
-    const torsoGeometry = new THREE.CylinderGeometry(0.3, 0.25, 0.8, 8);
-    const torso = new THREE.Mesh(torsoGeometry, bodyMaterial);
-    torso.position.set(0, 0.4, 0);
-    torso.castShadow = true;
-    ybot.add(torso);
-
-    // Create head
-    const headGeometry = new THREE.SphereGeometry(0.15, 8, 6);
-    const head = new THREE.Mesh(headGeometry, bodyMaterial);
-    head.position.set(0, 0.9, 0);
-    head.castShadow = true;
-    ybot.add(head);
-
-    // Create arms using cylinder geometry
-    const armGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.4, 6);
-    const leftArm = new THREE.Mesh(armGeometry, limbMaterial);
-    leftArm.position.set(-0.4, 0.3, 0);
-    leftArm.castShadow = true;
-    ybot.add(leftArm);
-
-    const rightArm = new THREE.Mesh(armGeometry, limbMaterial);
-    rightArm.position.set(0.4, 0.3, 0);
-    rightArm.castShadow = true;
-    ybot.add(rightArm);
-
-    // Create forearms
-    const forearmGeometry = new THREE.CylinderGeometry(0.06, 0.06, 0.3, 6);
-    const leftForearm = new THREE.Mesh(forearmGeometry, limbMaterial);
-    leftForearm.position.set(-0.6, 0.1, 0);
-    leftForearm.castShadow = true;
-    ybot.add(leftForearm);
-
-    const rightForearm = new THREE.Mesh(forearmGeometry, limbMaterial);
-    rightForearm.position.set(0.6, 0.1, 0);
-    rightForearm.castShadow = true;
-    ybot.add(rightForearm);
-
-    // Create hands (IK targets)
-    const handGeometry = new THREE.SphereGeometry(0.05, 6, 4);
-    const leftHandMesh = new THREE.Mesh(handGeometry, limbMaterial);
-    leftHandMesh.position.set(-0.8, -0.1, 0);
-    leftHandMesh.castShadow = true;
-    ybot.add(leftHandMesh);
-
-    const rightHandMesh = new THREE.Mesh(handGeometry, limbMaterial);
-    rightHandMesh.position.set(0.8, -0.1, 0);
-    rightHandMesh.castShadow = true;
-    ybot.add(rightHandMesh);
-
-    // Create legs
-    const legGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.6, 8);
-    const leftLeg = new THREE.Mesh(legGeometry, limbMaterial);
-    leftLeg.position.set(-0.15, -0.6, 0);
-    leftLeg.castShadow = true;
-    ybot.add(leftLeg);
-
-    const rightLeg = new THREE.Mesh(legGeometry, limbMaterial);
-    rightLeg.position.set(0.15, -0.6, 0);
-    rightLeg.castShadow = true;
-    ybot.add(rightLeg);
-
-    // Create feet
-    const footGeometry = new THREE.BoxGeometry(0.12, 0.08, 0.25);
-    const leftFoot = new THREE.Mesh(footGeometry, limbMaterial);
-    leftFoot.position.set(-0.15, -1.0, 0.05);
-    leftFoot.castShadow = true;
-    ybot.add(leftFoot);
-
-    const rightFoot = new THREE.Mesh(footGeometry, limbMaterial);
-    rightFoot.position.set(0.15, -1.0, 0.05);
-    rightFoot.castShadow = true;
-    ybot.add(rightFoot);
-
-    // Create a simple skeleton for IK
-    ybot.skeleton = {
-        bones: [
-            { name: 'Hips', position: new THREE.Vector3(0, 0, 0) },
-            { name: 'Spine', position: new THREE.Vector3(0, 0.2, 0) },
-            { name: 'Chest', position: new THREE.Vector3(0, 0.5, 0) },
-            { name: 'Neck', position: new THREE.Vector3(0, 0.7, 0) },
-            { name: 'Head', position: new THREE.Vector3(0, 0.9, 0) },
-            { name: 'LeftShoulder', position: new THREE.Vector3(-0.2, 0.6, 0) },
-            { name: 'LeftArm', position: new THREE.Vector3(-0.4, 0.4, 0) },
-            { name: 'LeftForeArm', position: new THREE.Vector3(-0.6, 0.2, 0) },
-            { name: 'LeftHand', position: new THREE.Vector3(-0.8, 0, 0) },
-            { name: 'RightShoulder', position: new THREE.Vector3(0.2, 0.6, 0) },
-            { name: 'RightArm', position: new THREE.Vector3(0.4, 0.4, 0) },
-            { name: 'RightForeArm', position: new THREE.Vector3(0.6, 0.2, 0) },
-            { name: 'RightHand', position: new THREE.Vector3(0.8, 0, 0) },
-            { name: 'LeftUpLeg', position: new THREE.Vector3(-0.15, -0.1, 0) },
-            { name: 'LeftLeg', position: new THREE.Vector3(-0.15, -0.5, 0) },
-            { name: 'LeftFoot', position: new THREE.Vector3(-0.15, -0.9, 0) },
-            { name: 'RightUpLeg', position: new THREE.Vector3(0.15, -0.1, 0) },
-            { name: 'RightLeg', position: new THREE.Vector3(0.15, -0.5, 0) },
-            { name: 'RightFoot', position: new THREE.Vector3(0.15, -0.9, 0) }
-        ]
-    };
-
-    ybot.position.set(0, 1, 0);
-    scene.add(ybot);
-    console.log('Rigged placeholder YBot created with skeleton for IK');
 }
 
 async function initWebLLM() {
@@ -775,7 +652,7 @@ function animate(currentTime = 0) {
             );
             ybotInstance.updateIK(physicsMode);
         } else {
-            // Fallback to simple IK if YBot not ready
+            // Simple IK system (no character loaded)
             applySimpleIK();
         }
     }
